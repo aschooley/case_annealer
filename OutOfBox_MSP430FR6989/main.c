@@ -67,6 +67,7 @@ volatile unsigned char stopWatchRunning = 0;
 volatile unsigned char tempSensorRunning = 0;
 volatile unsigned char S1buttonDebounce = 0;
 volatile unsigned char S2buttonDebounce = 0;
+volatile unsigned char HallbuttonDebounce = 0;
 volatile unsigned int holdCount = 0;
 volatile unsigned int counter = 0;
 volatile int centisecond = 0;
@@ -121,10 +122,12 @@ typedef enum
 #pragma PERSISTENT(g)
 struct
 {
-    uint8_t pwr;
+    int8_t pwr;
     display_power_t display_power;
     uint16_t power_display_timer_counter;
-}g={0,POWER_PRINT,0};
+    uint16_t up_sw_cnt;
+    uint16_t dn_sw_cnt;
+}g={0,POWER_PRINT,0,0,0};
 
 /*
  * Main routine
@@ -145,8 +148,29 @@ int main(void) {
     Init_Clock();
     Init_LCD();
 
-    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN1);
-    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN2);
+    // Configure button S2 (P1.3) interrupt
+    GPIO_selectInterruptEdge(GPIO_PORT_P1, GPIO_PIN3, GPIO_HIGH_TO_LOW_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P1, GPIO_PIN3);
+    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN3);
+    GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN3);
+
+
+    // Configure button S2 (P1.7) interrupt
+    GPIO_selectInterruptEdge(GPIO_PORT_P1, GPIO_PIN7, GPIO_HIGH_TO_LOW_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P1, GPIO_PIN7);
+    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN7);
+    GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN7);
+
+
+    // Configure button S2 (P2.1) interrupt
+    GPIO_selectInterruptEdge(GPIO_PORT_P2, GPIO_PIN1, GPIO_HIGH_TO_LOW_TRANSITION);
+    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P2, GPIO_PIN1);
+    GPIO_clearInterrupt(GPIO_PORT_P2, GPIO_PIN1);
+    GPIO_enableInterrupt(GPIO_PORT_P2, GPIO_PIN1);
+
+    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN3);
+    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN7);
+    GPIO_clearInterrupt(GPIO_PORT_P2, GPIO_PIN1);
 
     __enable_interrupt();
 
@@ -169,7 +193,8 @@ if(g.display_power==POWER_PRINT)
     g.display_power=POWER_HOLD;
     Timer_A_initUpMode(TIMER_A3_BASE, &initUpParam_A3);
 
-    uint8_t pwr = g.pwr+1;
+    //uint8_t pwr = g.pwr+1;
+    uint8_t pwr = g.pwr;
 
     sprintf(text,"&d",pwr);
 
@@ -183,6 +208,8 @@ if(g.display_power==POWER_PRINT)
                     showChar((pwr/10)%10 + '0',pos4);
                 if (pwr>=1)
                     showChar((pwr/1)%10 + '0',pos5);
+                if (pwr==0)
+                    showChar('0',pos5);
 
 
             Timer_A_outputPWMParam PWM_config = {
@@ -279,18 +306,21 @@ void Init_GPIO()
     GPIO_setAsOutputPin(GPIO_PORT_P9, GPIO_PIN0|GPIO_PIN1|GPIO_PIN2|GPIO_PIN3|GPIO_PIN4|GPIO_PIN5|GPIO_PIN6|GPIO_PIN7);
 
     GPIO_setAsInputPin(GPIO_PORT_P3, GPIO_PIN5);
+//
+//    // Configure button S1 (P1.1) interrupt
+//    GPIO_selectInterruptEdge(GPIO_PORT_P1, GPIO_PIN1, GPIO_HIGH_TO_LOW_TRANSITION);
+//    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P1, GPIO_PIN1);
+//    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN1);
+//    GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN1);
+//
+//    // Configure button S2 (P1.2) interrupt
+//    GPIO_selectInterruptEdge(GPIO_PORT_P1, GPIO_PIN2, GPIO_HIGH_TO_LOW_TRANSITION);
+//    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P1, GPIO_PIN2);
+//    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN2);
+//    GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN2);
 
-    // Configure button S1 (P1.1) interrupt
-    GPIO_selectInterruptEdge(GPIO_PORT_P1, GPIO_PIN1, GPIO_HIGH_TO_LOW_TRANSITION);
-    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P1, GPIO_PIN1);
-    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN1);
-    GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN1);
 
-    // Configure button S2 (P1.2) interrupt
-    GPIO_selectInterruptEdge(GPIO_PORT_P1, GPIO_PIN2, GPIO_HIGH_TO_LOW_TRANSITION);
-    GPIO_setAsInputPinWithPullUpResistor(GPIO_PORT_P1, GPIO_PIN2);
-    GPIO_clearInterrupt(GPIO_PORT_P1, GPIO_PIN2);
-    GPIO_enableInterrupt(GPIO_PORT_P1, GPIO_PIN2);
+
 
     // Set P4.1 and P4.2 as Secondary Module Function Input, LFXT.
     GPIO_setAsPeripheralModuleFunctionInputPin(
@@ -377,17 +407,7 @@ __interrupt void PORT1_ISR(void)
         case P1IV_NONE : break;
         case P1IV_P1IFG0 : break;
         case P1IV_P1IFG1 :    // Button S1 pressed
-            P1OUT |= BIT0;    // Turn LED1 On
-            if ((S1buttonDebounce) == 0)
-            {
-                S1buttonDebounce = 1;
-                g.pwr++;
-                g.pwr=g.pwr%100;
-                g.display_power=POWER_PRINT;
-                Timer_B_initUpMode(TIMER_B0_BASE, &initUpParam_A1);
 
-                Timer_A_clear(TIMER_A3_BASE);
-                g.power_display_timer_counter=0;
 #if 0
                 // Set debounce flag on first high to low transition
                 S1buttonDebounce = 1;
@@ -416,21 +436,10 @@ __interrupt void PORT1_ISR(void)
                 // Start debounce timer
                 Timer_A_initUpMode(TIMER_A0_BASE, &initUpParam_A0);
 #endif
-                }
-            break;
+
+    			break;
         case P1IV_P1IFG2 :    // Button S2 pressed
-            P9OUT |= BIT7;    // Turn LED2 On
-            if ((S2buttonDebounce) == 0)
-            {
-                S2buttonDebounce = 1;
-                getTime();
-                if(g.display_power!=POWER_HOLD)
-                {
-                    printTime();
-                }
-                resetStopWatch();
-                RTC_C_startClock(RTC_C_BASE);
-                Timer_B_initUpMode(TIMER_B0_BASE, &initUpParam_A1);
+
 #if 0
                 // Set debounce flag on first high to low transition
                 S2buttonDebounce = 1;
@@ -479,16 +488,77 @@ __interrupt void PORT1_ISR(void)
                 // Start debounce timer
                 Timer_A_initUpMode(TIMER_A0_BASE, &initUpParam_A0);
 #endif
-            }
-            break;
-        case P1IV_P1IFG3 : break;
-        case P1IV_P1IFG4 : break;
-        case P1IV_P1IFG5 : break;
+
+    			break;
+        case P1IV_P1IFG3 :
+        	P1OUT |= BIT0;    // Turn LED1 On
+			if ((S1buttonDebounce) == 0)
+			{
+				S1buttonDebounce = 1;
+				g.pwr++;
+				g.pwr = g.pwr>100?100:g.pwr;
+				//g.pwr=g.pwr%100;
+				g.display_power=POWER_PRINT;
+				Timer_B_initUpMode(TIMER_B0_BASE, &initUpParam_A1);
+
+				Timer_A_clear(TIMER_A3_BASE);
+				g.power_display_timer_counter=0;
+			}
+			break;
+        case P1IV_P1IFG4 :
+
+			break;
+
+        case P1IV_P1IFG5 :
+
+			break;
         case P1IV_P1IFG6 : break;
-        case P1IV_P1IFG7 : break;
+        case P1IV_P1IFG7 : P1OUT |= BIT0;    // Turn LED1 On
+		if ((S2buttonDebounce) == 0)
+		{
+			S2buttonDebounce = 1;
+			g.pwr--;
+			g.pwr = g.pwr<0?0:g.pwr;
+			//g.pwr=g.pwr%100;
+			g.display_power=POWER_PRINT;
+			Timer_B_initUpMode(TIMER_B0_BASE, &initUpParam_A1);
+
+			Timer_A_clear(TIMER_A3_BASE);
+			g.power_display_timer_counter=0;
+		}
+		break;
     }
 }
+#pragma vector = PORT2_VECTOR
+__interrupt void PORT2_ISR(void)
+{
+    switch(__even_in_range(P2IV, P2IV_P2IFG7))
+    {
+        case P2IV_NONE : break;
+        case P2IV_P2IFG0 : break;
+        case P2IV_P2IFG1 : P9OUT |= BIT7;    // Turn LED2 On
+		if ((HallbuttonDebounce) == 0)
+		{
+			HallbuttonDebounce = 1;
+			getTime();
+			if(g.display_power!=POWER_HOLD)
+			{
+				printTime();
+			}
+			resetStopWatch();
+			RTC_C_startClock(RTC_C_BASE);
+			Timer_B_initUpMode(TIMER_B0_BASE, &initUpParam_A1);
+		}
+		break;
+        case P2IV_P2IFG2 : break;
+        case P2IV_P2IFG3 : break;
+        case P2IV_P2IFG4 : break;
+        case P2IV_P2IFG5 : break;
+        case P2IV_P2IFG6 : break;
+        case P2IV_P2IFG7 : break;
 
+    }
+}
 #pragma vector = TIMER3_A0_VECTOR
 __interrupt void TIMER3_A0_ISR (void)
 {
@@ -544,19 +614,71 @@ __interrupt void TIMER0_B0_ISR (void)
         }
     }*/
 
+	if (!(P1IN & BIT3) && S1buttonDebounce == 1)
+	    {
+	       g.up_sw_cnt++;
+		   if(g.up_sw_cnt>18)
+		   {
+			   g.up_sw_cnt=0;
+			   g.pwr+=10;
+			 g.pwr=g.pwr>100?100:g.pwr;
+
+				g.display_power=POWER_PRINT;
+
+				Timer_A_clear(TIMER_A3_BASE);
+				g.power_display_timer_counter=0;
+		   }
+
+	    }
+
+	    // Button S2 released
+	    if (!(P1IN & BIT7) && S2buttonDebounce == 1 )
+	    {
+	    	g.dn_sw_cnt++;
+			if(g.dn_sw_cnt>18)
+			{
+				g.dn_sw_cnt=0;
+				g.pwr-=10;
+				g.pwr=g.pwr<0?0:g.pwr;
+				g.display_power=POWER_PRINT;
+
+				Timer_A_clear(TIMER_A3_BASE);
+				g.power_display_timer_counter=0;
+
+			}
+
+	    }
+
     // Button S1 released
-    if (P1IN & BIT1)
+    if (P1IN & BIT3 && S1buttonDebounce == 1)
     {
         S1buttonDebounce = 0;                                   // Clear button debounce
+        g.up_sw_cnt=0;
         P1OUT &= ~BIT0;
+ //       Timer_B_stop(TIMER_B0_BASE);
     }
 
     // Button S2 released
-    if (P1IN & BIT2)
+    if (P1IN & BIT7 && S2buttonDebounce == 1 )
     {
         S2buttonDebounce = 0;                                   // Clear button debounce
-        P9OUT &= ~BIT7;
+        g.dn_sw_cnt=0;
+        P1OUT &= ~BIT0;
+ //       Timer_B_stop(TIMER_B0_BASE);
     }
+
+
+
+
+    if (P2IN & BIT1 && HallbuttonDebounce ==1)
+        {
+
+        HallbuttonDebounce = 0;                                   // Clear button debounce
+        P9OUT &= ~BIT7;
+ //       Timer_B_stop(TIMER_B0_BASE);
+
+        }
+
 
     // Both button S1 & S2 released
   /*  if ((P1IN & BIT1) && (P1IN & BIT2))

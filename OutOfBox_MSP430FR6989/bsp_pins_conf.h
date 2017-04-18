@@ -139,7 +139,7 @@ extern "C" {
 
 //				name    		pin		type	default		enabled	alt_fcn
 #define pin_table \
-	pin_table_entry(LED_1,	PIN_66,	OUTPUT,	DISABLED,	HIGH,	PRIMARY)
+	pin_table_entry(LED_1,	PIN_4,	OUTPUT,	DISABLED,	HIGH,	TERTIARY)
 
 
 
